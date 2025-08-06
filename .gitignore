@@ -4,6 +4,7 @@
 
 # Session Data files
 .RData
+*.Rproj
 
 # User-specific files
 .Ruserdata
@@ -41,3 +42,8 @@ vignettes/*.pdf
 data/
 
 code/.ipynb_checkpoints/
+code/data
+code/*.html
+
+
+code/11*

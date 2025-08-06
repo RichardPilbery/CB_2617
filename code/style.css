@@ -1,0 +1,8 @@
+.html-widget {
+  height: 900px !important;
+}
+
+/* Or for all widget-containing figures */
+.figure .html-widget {
+  height: 900px !important;
+}
