@@ -140,9 +140,40 @@ event_df %>%
 ```
 
 
+## IMD and distance/travel time to dental treatment centre
+
+Distances in km and time in minutes
+
+```{r}
+
+imd_df <- readRDS('data/imd_df.rds')
+
+
+imd_df %>%
+  group_by(IMD) %>%
+  summarise(
+    n = n(),
+    across(everything(), \(x) median(x, na.rm = T))
+  ) %>% knitr::kable()
 
 
 
+```
+
+
+```{r}
+
+imd_df %>%
+  na.omit() %>%
+  pivot_longer(-IMD) %>%
+  ggplot(aes(x = IMD, y = value, fill = IMD)) +
+  geom_boxplot(outlier.shape = NA) +
+  ylim(c(0, 100)) +
+  facet_wrap(~name, scales = "free_y") +
+  theme_minimal()
+
+
+```
 
 
 

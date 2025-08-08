@@ -6,3 +6,7 @@
 .figure .html-widget {
   height: 900px !important;
 }
+
+.figure img {
+  width: 800px !important;
+}
