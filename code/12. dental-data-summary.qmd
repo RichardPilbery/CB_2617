@@ -27,12 +27,40 @@ library(widgetframe)
 event_df <- readRDS('data/event_log_df.rds')
 dental_df <- readRDS('data/all_iuc_dental_with_LSOA_df.rds')
 
+iuc_df2 <- readRDS('data/iuc_df.rds')
+
+
+dental_time_lu <- dental_df %>% 
+  group_by(index_call_ref) %>%
+  mutate(
+    time_to_dental = as.numeric(min(difftime(tbl_Dental_Data_NHBSA_start_date, index_call_date, units = 'days'), na.rm = T))
+  ) %>% ungroup() %>%
+  distinct(index_call_ref, time_to_dental) %>%
+  mutate(
+    time_to_dental = if_else(is.infinite(time_to_dental), NA_real_, time_to_dental),
+    dental_contact_category = case_when(
+      is.na(time_to_dental) ~ "No dental contact",
+      time_to_dental < 1 ~ "Dental contact within 24 hours",
+      time_to_dental < 7 ~ "Dental contact within 7 days",
+      time_to_dental >= 7 ~ "Dental contact after 7 days"
+    )
+  ) %>% select(index_call_ref, dental_contact_category)#
+
+#dental_time_lu %>% count(dental_contact_category)
+
+#   dental_contact_category            n
+#   <chr>                          <int>
+# 1 Dental contact after 7 days      824
+# 2 Dental contact with 7 days       903
+# 3 Dental contact within 24 hours   658
+
 
 # Age bins: 0-10, 11-20, 20-60, > 60 
 # Follow all cases (index call to 24 hours and 7 days) 
 
 table1_df <- dental_df %>%
-  mutate(
+  transmute(
+    person_id,
     age = as.integer(index_age),
     age_bin = case_when(
       between(age, 0, 10) ~ "0-10",
@@ -48,9 +76,15 @@ table1_df <- dental_df %>%
     IMD_decile = factor(index_imd_decile, levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")),
     dental_date = tbl_Dental_Data_NHBSA_start_date,
     #across(ends_with('_TEETH'), as.integer),
-    EXEMPTION_REMISSION_FLAG = str_replace(EXEMPTION_REMISSION_FLAG, " -.*", "")
+    EXEMPTION_REMISSION_FLAG = str_replace(EXEMPTION_REMISSION_FLAG, " -.*", ""),
+    index_call_date, index_call_ref,
+    RADIOGRAPH_FLAG,
+    dental_contact,
+    ANTIBIOTICS,
+    TRT_LOCATION_POSTCODE,
+    LSOA
   ) %>%
-  select(-age, -starts_with('index_'), -starts_with('tbl_'), -dental, index_call_date, index_call_ref) %>%
+  #select(-age, -starts_with('index_'), -starts_with('tbl_'), -dental, index_call_date, index_call_ref) %>%
   group_by(index_call_ref) %>%
   mutate(
     time_to_dental = as.numeric(min(difftime(dental_date, index_call_date, units = 'days'), na.rm = T)),
@@ -58,71 +92,173 @@ table1_df <- dental_df %>%
   mutate(
     `Time to dental contact (days)` = if_else(is.infinite(time_to_dental), NA_real_, time_to_dental),
     `Dental contact within 24 hours` = if_else(time_to_dental < 1, 'yes', 'no'),
-    `Dental contact within 7 days` = if_else(time_to_dental < 7, 'yes', 'no')
+    `Dental contact within 7 days` = if_else(time_to_dental < 7, 'yes', 'no'),
+    ANTIBIOTICS = if_else(is.na(ANTIBIOTICS) | ANTIBIOTICS == 0, 'no', 'yes')
   ) %>% select(
     -index_call_date, 
     -index_call_ref, 
     -dental_date, 
     -person_id,
     -TRT_LOCATION_POSTCODE,
-    -TREATMENT_COMPLETED,
     -LSOA,
     -time_to_dental
   )
 
 ```
 
-## Summary
+## Inclusion criteria
+
+All calls to NHS 111 in Yorkshire and Humber for callers registered with a Bradford GP between 1st October 2022 and 31st October 2023 where the 111 call triage included any one of the following:
+
++ IUC Symptom discriminators  
+  + SD4411	PC dental trauma, tooth avulsion
+  + SD4391	ED bleeding post dental procedure
+  + SD4392	PC dental brace problem
+  + SD4393	PC bleeding post dental procedure
+  + SD4047	PC full dental assessment and prescribing capability
+  + SD4204	PC dental service, location information
++ IUC Symptom groups
+  + 1134	Other Dental Problems - Fillings, Crowns Bridges, Appliances etc
+  + 1168	Toothache After Dental Injury
+  + 1169	Toothache Without Dental Injury
+  + 1226	Dental Problems
+  + 1051	Dental Bleeding
+  + 1052	Dental Injury
++ Disposition codes
+  + Dx118	Attend Emergency Dental Treatment Centre within 4 hours 
+  + Dx17	To contact a Dental Service within 1 hour  
+  + Dx18	To Contact a Dental Service within 2 hours 
+  + Dx19	To contact a Dental Service within 6 hours  
+  + Dx20	To contact a Dental Service within 12 hours 
+  + Dx21	To contact a Dental Service within 24 hours 
+  + Dx22	To contact a Dental Practice within 5 working days 
+  + Dx23	Contact Orthodontist next working day 
+  + Dx88	Speak to a Dental Service within 2 hours
+  
+  
+```{r}
+
+iuc_df2 %>%
+  filter(is_index_call == "1") %>%
+  transmute(
+    `Symptom discriminator` = Symdisc,
+    `Symptom group` = SymptomGroup,
+    `Final disposition` = final_dx_description
+  ) %>%
+  tbl_summary(
+    sort = list(all_categorical() ~ "frequency")
+  )
+
+
+
+
+```
+
+
+## Summary of dental contacts within 7 days
 
 ```{r}
 #| label: tbl-one
-#| tbl-cap: Summary table
+#| tbl-cap: Summary table of dental contacts within 7 days
 
 table1_df %>% 
-  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, `Time to dental contact (days)`, `Dental contact within 24 hours`, `Dental contact within 7 days`, everything()) %>%
+  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, `Time to dental contact (days)`, `Dental contact within 24 hours`, `Dental contact within 7 days`, everything(), -dental_contact, -age) %>%
+  rename(
+    `Age (years)` = age_bin,
+    `IMD decile` = IMD_decile,
+    `Referral service recommended by 111` = IUC_service_referral,
+    `Exemption from payment category` = EXEMPTION_REMISSION_FLAG,
+    `X-ray` = RADIOGRAPH_FLAG,
+    Antibiotics = ANTIBIOTICS
+  ) %>%
   tbl_summary(
-    by = 'dental_contact',
+    by = 'Dental contact within 7 days',
     type = list(all_dichotomous() ~ "categorical"),
     sort = list(
       all_categorical() ~ "frequency",
-      c("age_bin", "IMD_decile") ~ "alphanumeric"
+      c("Age (years)", "IMD decile") ~ "alphanumeric"
     ),
     missing = "no"
   ) %>%
   bold_labels() %>%
   add_overall(last = T) %>%
-  modify_spanning_header(c("stat_1", "stat_2") ~ "**Dental Contact**")
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Dental Contact within 7 days**")
 
 
 ```
 
-
-## First 5 healthcare contacts following index IUC/111 call with dental disposition
+## Summary of dental contacts within 24 hours
 
 ```{r}
+#| label: tbl-oneA
+#| tbl-cap: Summary table of dental contacts with 24 hours
 
-
-s <- readRDS('data/sankey.rds')
-frameWidget(s)
+table1_df %>% 
+  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, `Time to dental contact (days)`, `Dental contact within 24 hours`, everything(), -dental_contact, -age, -`Dental contact within 7 days`) %>%
+  rename(
+    `Age (years)` = age_bin,
+    `IMD decile` = IMD_decile,
+    `Referral service recommended by 111` = IUC_service_referral,
+    `Exemption from payment category` = EXEMPTION_REMISSION_FLAG,
+    `X-ray` = RADIOGRAPH_FLAG,
+    Antibiotics = ANTIBIOTICS
+  ) %>%
+  tbl_summary(
+    by = 'Dental contact within 24 hours',
+    type = list(all_dichotomous() ~ "categorical"),
+    sort = list(
+      all_categorical() ~ "frequency",
+      c("Age (years)", "IMD decile") ~ "alphanumeric"
+    ),
+    missing = "no"
+  ) %>%
+  bold_labels() %>%
+  add_overall(last = T) %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Dental Contact within 24 hours**")
 
 ```
 
 
-## Total contacts
+## Dental contact within 24 hours
+
+### Total contacts and time to contact
 
 
 ```{r}
 
-event_df %>% process_map(width = 1200, height = 1000)
+abs_time_map_fn <- function(df, 
+                            map_type = "abs_time", 
+                            dental_contact_cat = "Dental contact within 24 hours", 
+                            width = 1200, 
+                            height = 1000,
+                            time_frame = "days"
+                            ) {
+  
+  if(map_type == "abs_time") {
+      df %>% 
+      filter(dental_contact_category == dental_contact_cat) %>%
+        process_map(
+        type = frequency("absolute"),
+        sec = performance(FUN=median, time_frame), 
+        width = width, 
+        height = height
+      )
+  } else {
+    df %>% 
+      filter(dental_contact_category == dental_contact_cat) %>%
+      process_map(
+        type = frequency("relative_case"),
+              sec = frequency("absolute"), 
+              width = width, 
+              height = height
+        )
+  }
 
-```
+}
 
-### Median time to contact (days)
+event_df %>% left_join(dental_time_lu) %>%
+  abs_time_map_fn(time_frame = "hours")
 
-```{r}
-
-event_df %>%
-  process_map(performance(FUN=median, "days"), width = 1200, height = 1000)
 
 
 ```
@@ -134,8 +270,84 @@ event_df %>%
 
 
 event_df %>%
-  process_map(type = frequency("relative_case"),
-              sec = frequency("absolute"), width = 1200, height = 1000)
+  left_join(dental_time_lu) %>%
+  abs_time_map_fn("abs_rel", time_frame = "hours")
+
+```
+
+## Dental contact within 7 days
+
+### Total contacts and time to contact
+
+
+```{r}
+
+event_df %>% 
+  left_join(dental_time_lu) %>%
+  abs_time_map_fn(dental_contact_cat = "Dental contact within 7 days")
+
+```
+
+
+### Total contacts and relative frequency
+
+```{r}
+
+
+event_df %>%
+  left_join(dental_time_lu) %>%
+  abs_time_map_fn("abs_rel", "Dental contact within 7 days")
+
+```
+
+## Dental contact after more than 7 days
+
+### Total contacts and time to contact
+
+
+```{r}
+
+event_df %>% 
+  left_join(dental_time_lu) %>%
+  abs_time_map_fn(dental_contact_cat = "Dental contact after 7 days")
+
+```
+
+
+### Total contacts and relative frequency
+
+```{r}
+
+
+event_df %>%
+  left_join(dental_time_lu) %>%
+  abs_time_map_fn("abs_rel", "Dental contact after 7 days")
+
+```
+
+
+## No dental contact
+
+### Total contacts and time to contact
+
+
+```{r}
+
+event_df %>% 
+  left_join(dental_time_lu) %>%
+  abs_time_map_fn(dental_contact_cat = "No dental contact")
+
+```
+
+
+### Total contacts and relative frequency
+
+```{r}
+
+
+event_df %>% 
+  left_join(dental_time_lu) %>%
+  abs_time_map_fn("abs_rel", "No dental contact")
 
 ```
 
@@ -146,10 +358,12 @@ Distances in km and time in minutes
 
 ```{r}
 
-imd_df <- readRDS('data/imd_df.rds')
+imd_df <- readRDS('data/imd_df.rds') %>%
+  left_join(dental_time_lu)
 
 
 imd_df %>%
+  select(-index_call_ref, -index_call_date, -dental_contact_category, -ethnicity) %>%
   group_by(IMD) %>%
   summarise(
     n = n(),
@@ -161,17 +375,42 @@ imd_df %>%
 ```
 
 
+## Distance to dental service by IMD
+
 ```{r}
 
 imd_df %>%
+  select(-index_call_ref, -index_call_date, -ethnicity) %>%
   na.omit() %>%
-  pivot_longer(-IMD) %>%
+  pivot_longer(-c(IMD, dental_contact_category)) %>%
   ggplot(aes(x = IMD, y = value, fill = IMD)) +
   geom_boxplot(outlier.shape = NA) +
   ylim(c(0, 100)) +
-  facet_wrap(~name, scales = "free_y") +
+  facet_grid(rows = vars(dental_contact_category), cols = vars(name), scales = "free_y") +
   theme_minimal()
 
+
+```
+
+
+
+## Distance to dental service by ethnicity
+
+```{r}
+
+imd_df %>%
+  select(-index_call_ref, -index_call_date, -IMD) %>%
+  mutate(
+    ethnicity = fct_relevel(str_extract(ethnicity, "[^:]+"), 'White')
+  ) %>%
+  na.omit() %>%
+  pivot_longer(-c(ethnicity, dental_contact_category)) %>%
+  ggplot(aes(x = ethnicity, y = value, fill = ethnicity)) +
+  geom_boxplot(outlier.shape = NA) +
+  ylim(c(0, 100)) +
+  facet_grid(rows = vars(dental_contact_category), cols = vars(name), scales = "free_y") +
+  theme_minimal() +
+  theme(legend.position = 'bottom', axis.text.x = element_blank())
 
 ```
 

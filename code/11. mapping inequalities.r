@@ -178,15 +178,18 @@ final_dental_df %>% glimpse()
 
 final_dental_df %>% saveRDS('data/final_dental_df.rds')
 
+final_dental_df <- readRDS('data/final_dental_df.rds')
+
 
 # Quick calculation for IMD vs dist -----------------
 
 imd_df <- final_dental_df %>%
   filter(!is.na(dental)) %>%
-  select(index_imd_decile, ends_with('_dist'), ends_with('_time')) %>%
-  rename(IMD = index_imd_decile) %>%
+  select(index_call_ref, index_call_date, index_imd_decile, ends_with('_dist'), ends_with('_time'), index_ethnicity) %>%
+  rename(IMD = index_imd_decile, ethnicity = index_ethnicity) %>%
   mutate(
-    IMD = factor(IMD, levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"))
+    IMD = factor(IMD, levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")),
+    ethnicity = 
   ) 
 
 imd_df %>% saveRDS('data/imd_df.rds')
@@ -208,3 +211,9 @@ imd_df %>%
   theme_minimal()
 
 
+
+# Grab dental practices for typing ----------
+
+dental_df %>% count(TRT_LOCATION_POSTCODE, sort = T) %>%
+  filter(!is.na(TRT_LOCATION_POSTCODE)) %>%
+  write_csv('data/dental_pc.csv')
