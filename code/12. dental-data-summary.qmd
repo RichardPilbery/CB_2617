@@ -43,8 +43,9 @@ dental_time_lu <- dental_df %>%
       time_to_dental < 1 ~ "Dental contact within 24 hours",
       time_to_dental < 7 ~ "Dental contact within 7 days",
       time_to_dental >= 7 ~ "Dental contact after 7 days"
-    )
-  ) %>% select(index_call_ref, dental_contact_category)#
+    ),
+    less_than_7 = if_else(dental_contact_category %in% c("Dental contact within 24 hours", "Dental contact within 7 days"), "yes", "no")
+  ) %>% select(index_call_ref, dental_contact_category, less_than_7)#
 
 #dental_time_lu %>% count(dental_contact_category)
 
@@ -234,9 +235,37 @@ abs_time_map_fn <- function(df,
                             time_frame = "days"
                             ) {
   
-  if(map_type == "abs_time") {
-      df %>% 
+  if(dental_contact_cat == "Dental contact within 24 hours") {
+      df1 = df %>% 
       filter(dental_contact_category == dental_contact_cat) %>%
+      group_by(index_call_ref) %>%
+      arrange(activity_instance_id_by_bupar) %>%
+      filter(timestamp <= index_call_date + hours(24)) %>%
+      ungroup() 
+  } else if (dental_contact_cat == "Dental contact within 7 days") {
+      df1 = df %>% 
+        filter(dental_contact_category == dental_contact_cat) %>%
+        group_by(index_call_ref) %>%
+        arrange(activity_instance_id_by_bupar) %>%
+        filter(timestamp <= index_call_date + days(7)) %>%
+        ungroup()
+  } else {
+    df1 = df
+  }
+  
+  df1 <- eventlog(
+    df1, 
+    case_id = "index_call_ref",
+    activity_id = "site",
+    timestamp = "timestamp",
+    activity_instance_id = "activity_instance_id_by_bupar",
+    lifecycle_id = "lifecycle_id",
+    resource_id = "activity_id"
+  )
+
+
+  if(map_type == "abs_time") {
+      df1 %>%
         process_map(
         type = frequency("absolute"),
         sec = performance(FUN=median, time_frame), 
@@ -244,8 +273,7 @@ abs_time_map_fn <- function(df,
         height = height
       )
   } else {
-    df %>% 
-      filter(dental_contact_category == dental_contact_cat) %>%
+    df1 %>%
       process_map(
         type = frequency("relative_case"),
               sec = frequency("absolute"), 
@@ -363,7 +391,7 @@ imd_df <- readRDS('data/imd_df.rds') %>%
 
 
 imd_df %>%
-  select(-index_call_ref, -index_call_date, -dental_contact_category, -ethnicity) %>%
+  select(-index_call_ref, -index_call_date, -dental_contact_category, -ethnicity, -less_than_7) %>%
   group_by(IMD) %>%
   summarise(
     n = n(),
@@ -380,7 +408,7 @@ imd_df %>%
 ```{r}
 
 imd_df %>%
-  select(-index_call_ref, -index_call_date, -ethnicity) %>%
+  select(-index_call_ref, -index_call_date, -ethnicity, -less_than_7) %>%
   na.omit() %>%
   pivot_longer(-c(IMD, dental_contact_category)) %>%
   ggplot(aes(x = IMD, y = value, fill = IMD)) +
@@ -399,7 +427,7 @@ imd_df %>%
 ```{r}
 
 imd_df %>%
-  select(-index_call_ref, -index_call_date, -IMD) %>%
+  select(-index_call_ref, -index_call_date, -IMD, -less_than_7) %>%
   mutate(
     ethnicity = fct_relevel(str_extract(ethnicity, "[^:]+"), 'White')
   ) %>%
@@ -415,8 +443,35 @@ imd_df %>%
 ```
 
 
+## Process maps by ethinicity (dental contacts within 7 days)
 
 
+### White
+
+
+```{r}
+
+event_df %>% left_join(dental_time_lu) %>%
+  mutate(
+    ethnicity = fct_relevel(str_extract(index_ethnicity, "[^:]+"), 'White')
+  ) %>% filter(ethnicity == "White") %>%
+  abs_time_map_fn(dental_contact_cat = "Dental contact within 7 days") 
+
+
+```
+
+### Asian or Asian British
+
+```{r}
+
+event_df %>% left_join(dental_time_lu) %>%
+  mutate(
+    ethnicity = fct_relevel(str_extract(index_ethnicity, "[^:]+"), 'White')
+  ) %>% filter(ethnicity == "Asian or Asian British") %>%
+  abs_time_map_fn(dental_contact_cat = "Dental contact within 7 days") 
+
+
+```
 
 
 

@@ -21,6 +21,8 @@ dental_df <- readRDS('data/all_iuc_dental_with_LSOA_df.rds')
 
 # Convert LSOA and treatment postcode to Lat/Lon -----------
 
+dental_counts <- dental_df %>% filter(dental_contact == 'yes') %>% count(TRT_LOCATION_POSTCODE, sort = T)
+
 
 trt_pc <- dental_df %>% distinct(TRT_LOCATION_POSTCODE) %>% pull(TRT_LOCATION_POSTCODE)
 
@@ -46,7 +48,10 @@ lat_lon_pc_fn <- function(postcode) {
 #map(trt_pc, lat_lon_pc_fn)
 
 treatment_centre_df <- read_csv('data/lat_lon_pc.csv') %>%
-  distinct(postcode, latitude, longitude)
+  distinct(postcode, latitude, longitude) %>%
+  left_join(dental_counts, by=c("postcode"="TRT_LOCATION_POSTCODE"))
+
+treatment_centre_df %>% write_csv('data/treatment_centre_df.csv')
 
 
 # LSOA centroids -------------
@@ -55,6 +60,8 @@ treatment_centre_df <- read_csv('data/lat_lon_pc.csv') %>%
 lsoa_centroid_lu_df <- read_csv("data/LLSOA_Dec_2021_PWC_for_England_and_Wales_2022_1028145039677403461.csv")
 dental_lsoa <- dental_df %>% distinct(LSOA)
 dental_lsoa %>% count() # 642
+
+dental_lsoa %>% saveRDS('data/dental_lsoa.rds')
 
 lsoa_lat_lon <- st_as_sf(lsoa_centroid_lu_df, coords = c("x", "y"), crs = 27700) %>%
   st_transform(crs = 4326) 
