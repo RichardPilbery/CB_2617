@@ -51,7 +51,7 @@ treatment_centre_df <- read_csv('data/lat_lon_pc.csv') %>%
   distinct(postcode, latitude, longitude) %>%
   left_join(dental_counts, by=c("postcode"="TRT_LOCATION_POSTCODE"))
 
-treatment_centre_df %>% write_csv('data/treatment_centre_df.csv')
+#treatment_centre_df %>% write_csv('data/treatment_centre_df.csv')
 
 
 # LSOA centroids -------------
@@ -61,7 +61,7 @@ lsoa_centroid_lu_df <- read_csv("data/LLSOA_Dec_2021_PWC_for_England_and_Wales_2
 dental_lsoa <- dental_df %>% distinct(LSOA)
 dental_lsoa %>% count() # 642
 
-dental_lsoa %>% saveRDS('data/dental_lsoa.rds')
+#dental_lsoa %>% saveRDS('data/dental_lsoa.rds')
 
 lsoa_lat_lon <- st_as_sf(lsoa_centroid_lu_df, coords = c("x", "y"), crs = 27700) %>%
   st_transform(crs = 4326) 
@@ -183,7 +183,7 @@ final_dental_df %>% count() # 7050
 final_dental_df %>% glimpse()
 
 
-final_dental_df %>% saveRDS('data/final_dental_df.rds')
+#final_dental_df %>% saveRDS('data/final_dental_df.rds')
 
 final_dental_df <- readRDS('data/final_dental_df.rds')
 
@@ -196,22 +196,32 @@ imd_df <- final_dental_df %>%
   rename(IMD = index_imd_decile, ethnicity = index_ethnicity) %>%
   mutate(
     IMD = factor(IMD, levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10")),
-    ethnicity = 
+    ethnicity = fct_relevel(str_extract(ethnicity, "[^:]+"), 'White')
   ) 
 
-imd_df %>% saveRDS('data/imd_df.rds')
+#imd_df %>% saveRDS('data/imd_df.rds')
 
-imd_df %>%
-  group_by(IMD) %>%
+imd_df1 <- imd_df %>%
+  select(-starts_with('index_')) %>%
+  group_by(IMD, ethnicity) %>%
   summarise(
     n = n(),
     across(everything(), \(x) median(x, na.rm = T))
   )
 
-imd_df %>%
+imd_df1 %>%
   na.omit() %>%
-  pivot_longer(-IMD) %>%
+  pivot_longer(-c(IMD, ethnicity)) %>%
   ggplot(aes(x = IMD, y = value, fill = IMD)) +
+  geom_boxplot(outlier.shape = NA) +
+  ylim(c(0, 100)) +
+  facet_wrap(~name, scales = "free_y") +
+  theme_minimal()
+
+imd_df1 %>%
+  na.omit() %>%
+  pivot_longer(-c(IMD, ethnicity)) %>%
+  ggplot(aes(x = IMD, y = value, fill = ethnicity)) +
   geom_boxplot(outlier.shape = NA) +
   ylim(c(0, 100)) +
   facet_wrap(~name, scales = "free_y") +

@@ -7,8 +7,19 @@ library(bupaverse)
 # Prep data -----------------
 
 df <- readRDS('data/combined_data_for_event_log_df.rds') # 27908
+df %>% count()
 
-df1 <- df %>%
+df1 <- df %>% #head(n=100) %>%
+  # Dental times are only dates
+  # 
+  mutate(
+    start_date = if_else(
+      site == 'Dentist', 
+      start_date + hours(8),
+      start_date
+    ),
+    end_date = if_else(site == 'Dentist', start_date + min(20), end_date)
+  ) %>%
   arrange(index_call_ref, start_date) %>%
   mutate(
     activity_id = paste(site, row_number(), sep="-")

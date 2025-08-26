@@ -5,15 +5,25 @@
 library(tidyverse)
 library(gtsummary)
 library(lubridate)
+library(readxl)
 
 event_df <- readRDS('data/event_log_df.rds')
 dental_df <- readRDS('data/all_iuc_dental_with_LSOA_df.rds')
+
+dental_loc_df <- read_xlsx('data/dental_full_nhs_address_cleaned_DM.xlsx') %>%
+  filter(Type %in% c("private", "ortho", "secondary", "urgent", "prmiary") | grepl("primary", Type)) %>%
+  mutate(
+    Type = if_else(Type == "prmiary", "primary", Type)
+  ) %>% select(Postcode, Type)
+
+dental_df1 <- dental_df %>%
+  left_join(dental_loc_df, by=c("TRT_LOCATION_POSTCODE"="Postcode"))
 
 
 # Age bins: 0-10, 11-20, 20-60, > 60 
 # Follow all cases (index call to 24 hours and 7 days) 
 
-table1_df <- dental_df %>%
+table1_df <- dental_df1 %>%
   mutate(
     age = as.integer(index_age),
     age_bin = case_when(
@@ -53,7 +63,7 @@ table1_df <- dental_df %>%
 
 
 table1_df %>% 
-  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, time_to_dental, dental_7, dental_24, everything()) %>%
+  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, time_to_dental, dental_7, dental_24, `Dental practice type`, everything()) %>%
   tbl_summary(
     by = 'dental_contact',
     sort = list(

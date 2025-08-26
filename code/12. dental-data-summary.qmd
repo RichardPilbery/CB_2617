@@ -23,9 +23,19 @@ library(networkD3)
 library(bupaverse)
 library(htmlwidgets)
 library(widgetframe)
+library(readxl)
 
 event_df <- readRDS('data/event_log_df.rds')
 dental_df <- readRDS('data/all_iuc_dental_with_LSOA_df.rds')
+
+dental_loc_df <- read_xlsx('data/dental_full_nhs_address_cleaned_DM.xlsx') %>%
+  filter(Type %in% c("private", "ortho", "secondary", "urgent", "prmiary") | grepl("primary", Type)) %>%
+  mutate(
+    Type = if_else(Type == "prmiary", "primary", Type)
+  ) %>% select(Postcode, Type)
+
+dental_df1 <- dental_df %>%
+  left_join(dental_loc_df, by=c("TRT_LOCATION_POSTCODE"="Postcode"))
 
 iuc_df2 <- readRDS('data/iuc_df.rds')
 
@@ -47,6 +57,8 @@ dental_time_lu <- dental_df %>%
     less_than_7 = if_else(dental_contact_category %in% c("Dental contact within 24 hours", "Dental contact within 7 days"), "yes", "no")
   ) %>% select(index_call_ref, dental_contact_category, less_than_7)#
 
+#dental_time_lu %>% saveRDS('data/dental_time_lu.rds')
+
 #dental_time_lu %>% count(dental_contact_category)
 
 #   dental_contact_category            n
@@ -59,7 +71,7 @@ dental_time_lu <- dental_df %>%
 # Age bins: 0-10, 11-20, 20-60, > 60 
 # Follow all cases (index call to 24 hours and 7 days) 
 
-table1_df <- dental_df %>%
+table1_df <- dental_df1 %>%
   transmute(
     person_id,
     age = as.integer(index_age),
@@ -83,7 +95,8 @@ table1_df <- dental_df %>%
     dental_contact,
     ANTIBIOTICS,
     TRT_LOCATION_POSTCODE,
-    LSOA
+    LSOA,
+    Type
   ) %>%
   #select(-age, -starts_with('index_'), -starts_with('tbl_'), -dental, index_call_date, index_call_ref) %>%
   group_by(index_call_ref) %>%
@@ -94,6 +107,7 @@ table1_df <- dental_df %>%
     `Time to dental contact (days)` = if_else(is.infinite(time_to_dental), NA_real_, time_to_dental),
     `Dental contact within 24 hours` = if_else(time_to_dental < 1, 'yes', 'no'),
     `Dental contact within 7 days` = if_else(time_to_dental < 7, 'yes', 'no'),
+    `Dental surgery type` = Type,
     ANTIBIOTICS = if_else(is.na(ANTIBIOTICS) | ANTIBIOTICS == 0, 'no', 'yes')
   ) %>% select(
     -index_call_date, 
@@ -102,7 +116,8 @@ table1_df <- dental_df %>%
     -person_id,
     -TRT_LOCATION_POSTCODE,
     -LSOA,
-    -time_to_dental
+    -time_to_dental,
+    -Type
   )
 
 ```
@@ -163,7 +178,7 @@ iuc_df2 %>%
 #| tbl-cap: Summary table of dental contacts within 7 days
 
 table1_df %>% 
-  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, `Time to dental contact (days)`, `Dental contact within 24 hours`, `Dental contact within 7 days`, everything(), -dental_contact, -age) %>%
+  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, `Time to dental contact (days)`, `Dental contact within 24 hours`, `Dental contact within 7 days`, `Dental surgery type`, everything(), -dental_contact, -age) %>%
   rename(
     `Age (years)` = age_bin,
     `IMD decile` = IMD_decile,
@@ -239,14 +254,14 @@ abs_time_map_fn <- function(df,
       df1 = df %>% 
       filter(dental_contact_category == dental_contact_cat) %>%
       group_by(index_call_ref) %>%
-      arrange(activity_instance_id_by_bupar) %>%
+      arrange(timestamp) %>%
       filter(timestamp <= index_call_date + hours(24)) %>%
       ungroup() 
   } else if (dental_contact_cat == "Dental contact within 7 days") {
       df1 = df %>% 
         filter(dental_contact_category == dental_contact_cat) %>%
         group_by(index_call_ref) %>%
-        arrange(activity_instance_id_by_bupar) %>%
+        arrange(timestamp) %>%
         filter(timestamp <= index_call_date + days(7)) %>%
         ungroup()
   } else {
@@ -254,7 +269,7 @@ abs_time_map_fn <- function(df,
   }
   
   df1 <- eventlog(
-    df1, 
+    df1 %>% arrange(index_call_ref, timestamp), 
     case_id = "index_call_ref",
     activity_id = "site",
     timestamp = "timestamp",
