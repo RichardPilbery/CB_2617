@@ -58,6 +58,7 @@ dental_time_lu <- dental_df %>%
   ) %>% select(index_call_ref, dental_contact_category, less_than_7)#
 
 #dental_time_lu %>% saveRDS('data/dental_time_lu.rds')
+dental_time_lu <- readRDS('data/dental_time_lu.rds')
 
 #dental_time_lu %>% count(dental_contact_category)
 
@@ -95,6 +96,7 @@ table1_df <- dental_df1 %>%
     dental_contact,
     ANTIBIOTICS,
     TRT_LOCATION_POSTCODE,
+    TREATMENT_CHARGE_BAND,
     LSOA,
     Type
   ) %>%
@@ -102,19 +104,21 @@ table1_df <- dental_df1 %>%
   group_by(index_call_ref) %>%
   mutate(
     time_to_dental = as.numeric(min(difftime(dental_date, index_call_date, units = 'days'), na.rm = T)),
-    dental_contact_category = case_when(
+    time_to_dental = if_else(is.infinite(time_to_dental), NA_real_, time_to_dental),
+    dental_contact_category = factor(case_when(
       is.na(time_to_dental) ~ "No dental contact",
       time_to_dental < 1 ~ "Dental contact within 24 hours",
       time_to_dental < 7 ~ "Dental contact within 7 days",
       time_to_dental >= 7 ~ "Dental contact after 7 days"
-    )
+    ))
   ) %>% ungroup() %>%
   mutate(
     `Time to dental contact (days)` = if_else(is.infinite(time_to_dental), NA_real_, time_to_dental),
     `Dental contact within 24 hours` = if_else(time_to_dental < 1, 'yes', 'no'),
     `Dental contact within 7 days` = if_else(time_to_dental < 7, 'yes', 'no'),
     `Dental surgery type` = Type,
-    ANTIBIOTICS = if_else(is.na(ANTIBIOTICS) | ANTIBIOTICS == 0, 'no', 'yes')
+    ANTIBIOTICS = if_else(is.na(ANTIBIOTICS) | ANTIBIOTICS == 0, 'no', 'yes'),
+    `UDA banding` = factor(TREATMENT_CHARGE_BAND, levels = c("Urgent Treatment", "Band 1", "Band 2", "Band 3", "Free"))
   ) %>% select(
     -index_call_date, 
     -index_call_ref, 
@@ -123,7 +127,8 @@ table1_df <- dental_df1 %>%
     -TRT_LOCATION_POSTCODE,
     -LSOA,
     -time_to_dental,
-    -Type
+    -Type,
+    -TREATMENT_CHARGE_BAND
   )
 
 ```
@@ -177,14 +182,14 @@ iuc_df2 %>%
 ```
 
 
-## Summary of dental contacts within 7 days
+## Summary of dental contacts
 
 ```{r}
 #| label: tbl-one
-#| tbl-cap: Summary table of dental contacts within 7 days
+#| tbl-cap: Summary table of dental contacts
 
 table1_df %>% 
-  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, dental_contact_category, `Time to dental contact (days)`, `Dental contact within 24 hours`, `Dental contact within 7 days`, `Dental surgery type`, everything(), -dental_contact, -age) %>%
+  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, dental_contact_category, `Time to dental contact (days)`, EXEMPTION_REMISSION_FLAG, RADIOGRAPH_FLAG, ANTIBIOTICS, `Dental surgery type`, `UDA banding`,  -dental_contact, -age) %>%
   rename(
     `Age (years)` = age_bin,
     `IMD decile` = IMD_decile,
@@ -208,36 +213,6 @@ table1_df %>%
 
 ```
 
-## Summary of dental contacts within 24 hours
-
-```{r}
-#| label: tbl-oneA
-#| tbl-cap: Summary table of dental contacts with 24 hours
-
-table1_df %>% 
-  select(age_bin, sex, ethnicity, IMD_decile, IUC_service_referral, `Time to dental contact (days)`, `Dental contact within 24 hours`, everything(), -dental_contact, -age, -`Dental contact within 7 days`) %>%
-  rename(
-    `Age (years)` = age_bin,
-    `IMD decile` = IMD_decile,
-    `Referral service recommended by 111` = IUC_service_referral,
-    `Exemption from payment category` = EXEMPTION_REMISSION_FLAG,
-    `X-ray` = RADIOGRAPH_FLAG,
-    Antibiotics = ANTIBIOTICS
-  ) %>%
-  tbl_summary(
-    by = 'Dental contact within 24 hours',
-    type = list(all_dichotomous() ~ "categorical"),
-    sort = list(
-      all_categorical() ~ "frequency",
-      c("Age (years)", "IMD decile") ~ "alphanumeric"
-    ),
-    missing = "no"
-  ) %>%
-  bold_labels() %>%
-  add_overall(last = T) %>%
-  modify_spanning_header(c("stat_1", "stat_2") ~ "**Dental Contact within 24 hours**")
-
-```
 
 
 ## Dental contact within 24 hours
@@ -269,8 +244,16 @@ abs_time_map_fn <- function(df,
         arrange(timestamp) %>%
         filter(timestamp <= index_call_date + days(7)) %>%
         ungroup()
+  } else if (dental_contact_cat == "Dental contact after 7 days") {
+      df1 = df %>% 
+        filter(dental_contact_category == dental_contact_cat) %>%
+        group_by(index_call_ref) %>%
+        arrange(timestamp) %>%
+        filter(timestamp > index_call_date + days(7)) %>%
+        ungroup()
   } else {
-    df1 = df
+    df1 = df %>%
+      filter(dental_contact_category == dental_contact_cat) 
   }
   
   df1 <- eventlog(
